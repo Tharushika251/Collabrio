@@ -263,11 +263,13 @@ function reduceOp(board, { opType, payload }) {
       break;
     }
     case 'stroke.clear': {
+      // Mark the board as cleared at this moment. Any stroke committed before
+      // this timestamp is considered deleted, regardless of arrival order.
+      // This makes `clear` idempotent and race-safe: a stroke.add that is still
+      // in flight will be rejected on both client and server once its
+      // `createdAt` is older than `clearedAt`.
+      next.clearedAt = Date.now();
       for (const s of next.strokes) s.deleted = true;
-      break;
-    }
-    case 'stroke.clear': {
-      board.clearedAt = new Date();
       break;
     }
     case 'task.add': {
