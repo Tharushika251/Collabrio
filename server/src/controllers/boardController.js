@@ -18,9 +18,39 @@ export async function createBoard(req, res) {
 
 export async function listBoards(req, res) {
   const boards = await Board.find({ members: req.user._id })
-    .select('name owner members updatedAt')
-    .sort({ updatedAt: -1 });
-  res.json({ boards });
+    .select('name owner members updatedAt strokes columns clearedAt')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  // Trim the payload for the dashboard: previews only need a subset of
+  // strokes, and the task count is more useful than the full column tree.
+  const summary = boards.map((b) => {
+    const visibleStrokes = (b.strokes || [])
+      .filter((s) => !s.deleted)
+      .slice(-80)
+      .map((s) => ({
+        points: s.points,
+        color: s.color,
+        width: s.width,
+      }));
+
+    const taskCount = (b.columns || []).reduce(
+      (sum, c) => sum + (c.tasks?.length || 0),
+      0
+    );
+
+    return {
+      _id: b._id,
+      name: b.name,
+      owner: b.owner,
+      members: b.members,
+      updatedAt: b.updatedAt,
+      strokes: visibleStrokes,
+      taskCount,
+    };
+  });
+
+  res.json({ boards: summary });
 }
 
 export async function getBoard(req, res) {
