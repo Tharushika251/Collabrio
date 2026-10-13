@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import BoardPage from './pages/BoardPage';
+import JoinBoard from './pages/JoinBoard';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/join/:token" element={<JoinBoard />} />
             <Route
               path="/"
               element={

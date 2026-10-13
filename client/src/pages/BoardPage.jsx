@@ -8,6 +8,7 @@ import Whiteboard from '../components/Whiteboard';
 import TaskBoard from '../components/TaskBoard';
 import PresenceBar from '../components/PresenceBar';
 import RemoteCursors from '../components/RemoteCursors';
+import ShareModal from '../components/ShareModal';
 
 /**
  * Board page orchestrator.
@@ -28,6 +29,7 @@ export default function BoardPage() {
   const lastVersionRef = useRef(0);
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 });
+  const [showShare, setShowShare] = useState(false);
 
   const { users, cursors, editors } = usePresence(boardId);
 
@@ -120,23 +122,39 @@ export default function BoardPage() {
     [socket, boardId]
   );
 
-  // Cursor broadcast. Throttled via rAF to avoid flooding the socket.
+  // Reference coordinate space shared with the whiteboard canvas.
+  // Cursors are normalized to this space before transmission so that
+  // clients with different viewport sizes render them in the same
+  // logical position on the board.
+  const REF_W = 1200;
+  const REF_H = 600;
+
   useEffect(() => {
     if (!socket || !containerRef.current) return;
     const el = containerRef.current;
     let raf = null;
+
     const onMove = (e) => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = null;
         const rect = el.getBoundingClientRect();
+
+        // Normalize screen pixels → reference coordinates.
+        // Using `clientX/Y` minus the container's rect gives us
+        // container-local pixels; scaling by REF/rect puts them in
+        // the shared coordinate space.
+        const nx = ((e.clientX - rect.left) / rect.width) * REF_W;
+        const ny = ((e.clientY - rect.top) / rect.height) * REF_H;
+
         socket.emit('presence:cursor', {
           boardId,
-          x: Math.round(e.clientX - rect.left),
-          y: Math.round(e.clientY - rect.top),
+          x: Math.round(nx),
+          y: Math.round(ny),
         });
       });
     };
+
     el.addEventListener('pointermove', onMove);
     return () => el.removeEventListener('pointermove', onMove);
   }, [socket, boardId]);
@@ -193,9 +211,18 @@ export default function BoardPage() {
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{board.name}</h1>
-          <p className="text-xs text-slate-500">v{lastVersionRef.current} · {users.length} online</p>
+          <p className="text-xs text-slate-500">v{lastVersionRef.current} · {users.length} online
+          </p>
         </div>
-        <PresenceBar users={users} editors={editors} />
+        <div className="flex items-center gap-3">
+          <PresenceBar users={users} editors={editors} />
+          <button
+            onClick={() => setShowShare(true)}
+            className="text-sm px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-700"
+          >
+            Share
+          </button>
+        </div>
       </header>
 
       <nav className="flex gap-2">
@@ -214,7 +241,7 @@ export default function BoardPage() {
       </nav>
 
       <div ref={containerRef} className="relative">
-        <RemoteCursors cursors={cursors} containerSize={containerSize} />
+        <RemoteCursors cursors={cursors} users={users} />
 
         {tab === 'whiteboard' ? (
           <Whiteboard
@@ -234,6 +261,12 @@ export default function BoardPage() {
           />
         )}
       </div>
+      {showShare && (
+        <ShareModal
+          board={{ id: boardId, shareToken: board.shareToken }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>
   );
 }

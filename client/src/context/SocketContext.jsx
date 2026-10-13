@@ -8,25 +8,21 @@ const SocketContext = createContext(null);
 /**
  * Module-level singleton.
  *
- * React 18 StrictMode intentionally mounts, unmounts, and remounts every
- * component in development. If the socket is created inside useEffect and
- * torn down during the StrictMode cleanup, the client aborts an in-flight
- * WebSocket handshake and logs "closed before the connection is established".
- *
- * Hoisting the socket to module scope ensures exactly one connection is
- * created for the application lifetime, regardless of how many times the
- * provider remounts.
+ * React 18 StrictMode mounts, unmounts, and remounts every component in
+ * development. Creating the socket inside useEffect would tear down an
+ * in-flight handshake and log "closed before the connection is
+ * established". Hoisting to module scope guarantees exactly one
+ * connection per tab, regardless of provider remounts.
  */
 let socketInstance = null;
 
-function getSocket(token) {
+function getSocket() {
   if (socketInstance) return socketInstance;
 
   socketInstance = io(SOCKET_URL, {
-    auth: (cb) => cb({ token }),
-    // Start with polling then upgrade: the WebSocket-only transport can fail
-    // behind proxies and during fast dev remounts, and polling fallback makes
-    // reconnect behavior resilient.
+    // Auth is resolved lazily on each connect attempt so token rotation
+    // works without recreating the socket.
+    auth: (cb) => cb({ token: localStorage.getItem(TOKEN_KEY) }),
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
@@ -52,15 +48,15 @@ export function SocketProvider({ children }) {
 
   useEffect(() => {
     if (!user) {
+      // Logout: the socket's identity is tied to a JWT. A new user must
+      // never inherit an old user's socket, so tear it down cleanly.
       destroySocket();
       setSocket(null);
       setConnected(false);
       return;
     }
 
-    // Refresh the token inside the auth callback on every connect attempt,
-    // so a rotated token is picked up without recreating the socket.
-    const s = getSocket(localStorage.getItem(TOKEN_KEY));
+    const s = getSocket();
 
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
@@ -74,8 +70,8 @@ export function SocketProvider({ children }) {
     setSocket(s);
 
     return () => {
-      // Only remove the listeners we added; keep the underlying socket alive
-      // so a StrictMode remount does not tear down an established connection.
+      // Only remove the listeners we added. The underlying socket
+      // survives provider remounts on purpose.
       s.off('connect', onConnect);
       s.off('disconnect', onDisconnect);
       s.off('connect_error', onConnectError);

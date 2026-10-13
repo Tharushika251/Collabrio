@@ -1,21 +1,22 @@
 import { Server } from 'socket.io';
 import { verifyToken } from '../middleware/authMiddleware.js';
 import { registerBoardHandlers } from './boardHandler.js';
-import { addUser, removeUser, updateCursor, listUsers } from './presenceHandler.js';
+import {
+  addUser,
+  removeUserFromAll,
+  updateCursor,
+  listUsers,
+} from './presenceHandler.js';
 import { logger } from '../utils/logger.js';
 
 /**
  * Initializes Socket.IO with JWT handshake authentication.
- * Unauthenticated sockets are rejected before any event can be registered,
- * which keeps every downstream handler free of auth checks.
+ * Unauthenticated sockets are rejected before any handler is registered,
+ * so downstream code never has to check auth.
  */
 export function initSocket(httpServer) {
   const io = new Server(httpServer, {
-    cors: {
-      origin: process.env.CLIENT_URL,
-      credentials: true,
-    },
-    // Tuned for flaky networks: fast client detection, then exponential backoff.
+    cors: { origin: process.env.CLIENT_URL, credentials: true },
     pingInterval: 25000,
     pingTimeout: 20000,
   });
@@ -31,23 +32,36 @@ export function initSocket(httpServer) {
       socket.data.user = user;
       next();
     } catch (err) {
+      logger.warn('socket auth failed', err.message);
       next(new Error('Authentication failed'));
     }
   });
 
   io.on('connection', (socket) => {
     const { user } = socket.data;
-    logger.info(`socket connected`, { id: socket.id, user: user.name });
+    logger.info('socket connected', { id: socket.id, user: user.name });
 
     registerBoardHandlers(io, socket);
 
+    // Authoritative presence join. Payload is `boardId` only.
+    // A socket may join multiple boards (future feature) so we do not
+    // overwrite a single `boardId` field on socket.data.
     socket.on('presence:join', ({ boardId }) => {
+      if (!boardId) return;
+      socket.join(boardId);
       addUser(boardId, socket.id, user);
-      socket.data.boardId = boardId;
+      io.to(boardId).emit('presence:update', listUsers(boardId));
+    });
+
+    socket.on('presence:leave', ({ boardId }) => {
+      if (!boardId) return;
+      socket.leave(boardId);
+      removeUserFromAll(socket.id);
       io.to(boardId).emit('presence:update', listUsers(boardId));
     });
 
     socket.on('presence:cursor', ({ boardId, x, y }) => {
+      if (!boardId) return;
       updateCursor(boardId, socket.id, { x, y });
       socket.to(boardId).emit('presence:cursor', {
         userId: user._id.toString(),
@@ -58,7 +72,7 @@ export function initSocket(httpServer) {
     });
 
     socket.on('presence:editing', ({ boardId, target }) => {
-      // target: { kind: 'task', id } | null — used to render "Sam is editing…"
+      if (!boardId) return;
       socket.to(boardId).emit('presence:editing', {
         userId: user._id.toString(),
         name: user.name,
@@ -68,12 +82,12 @@ export function initSocket(httpServer) {
 
     socket.on('disconnect', (reason) => {
       logger.info('socket disconnected', { id: socket.id, reason });
-      const boardId = socket.data.boardId;
-      if (boardId) {
-        removeUser(boardId, socket.id);
+      // Sweep the socket out of every board it was registered in, then
+      // broadcast a fresh presence list to each affected room.
+      const affected = removeUserFromAll(socket.id);
+      for (const boardId of affected) {
         io.to(boardId).emit('presence:update', listUsers(boardId));
-        // Clear any "user is editing" indicator owned by this socket.
-        socket.to(boardId).emit('presence:editing', {
+        io.to(boardId).emit('presence:editing', {
           userId: user._id.toString(),
           name: user.name,
           target: null,

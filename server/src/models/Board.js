@@ -45,6 +45,9 @@ const boardSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, maxlength: 80 },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Opaque token embedded in the invite URL. Rotating it invalidates
+    // all previously shared links without affecting existing members.
+    shareToken: { type: String, required: true, unique: true, index: true },
     strokes: { type: [strokeSchema], default: [] },
     columns: {
       type: [columnSchema],

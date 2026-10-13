@@ -151,8 +151,23 @@ export function registerBoardHandlers(io, socket) {
       const isMember = board.members.some((m) => m.toString() === user._id.toString());
       if (!isMember) return ack?.({ ok: false, error: 'Access denied' });
 
+      // Leave any previous board room before joining the new one.
+      // Otherwise switching boards leaves the socket in two rooms and
+      // presence broadcasts leak across boards.
+      if (socket.data.boardId && socket.data.boardId !== boardId) {
+        socket.leave(socket.data.boardId);
+        removeUser(socket.data.boardId, socket.id);
+        io.to(socket.data.boardId).emit('presence:update', listUsers(socket.data.boardId));
+      }
+
       socket.join(boardId);
       socket.data.boardId = boardId;
+
+      // Register presence here so the join and the presence track are
+      // always paired. The old client-side presence:join event is no
+      // longer needed and has been removed.
+      addUser(boardId, socket.id, user);
+      io.to(boardId).emit('presence:update', listUsers(boardId));
 
       ack?.({
         ok: true,

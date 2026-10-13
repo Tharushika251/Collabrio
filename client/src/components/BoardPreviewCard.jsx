@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import AvatarStack from './AvatarStack';
 
 /**
  * Compact dashboard tile that renders a mini preview of a board's
@@ -123,15 +124,19 @@ export default function BoardPreviewCard({ board }) {
           </span>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            {board.strokes?.length ?? 0} strokes
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            {board.taskCount ?? 0} tasks
-          </span>
+        <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+            <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                {board.strokes?.length ?? 0} strokes
+                </span>
+                <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                {board.taskCount ?? 0} tasks
+                </span>
+            </div>
+
+            <AvatarStack members={board.members ?? []} max={4} size={22} />
         </div>
       </div>
     </Link>
