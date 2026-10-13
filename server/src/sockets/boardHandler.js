@@ -22,7 +22,10 @@ export async function applyOperation(board, op, userId) {
         return { applied: false };   // stale stroke, drop it
       }
       if (board.strokes.some((s) => s.id === op.payload.id)) return { applied: false };
-      board.strokes.push({ ...op.payload, userId: userId.toString(), deleted: false });
+      board.strokes.push({ 
+        ...op.payload, userId: userId.toString(), 
+        deleted: false 
+      });
       break;
     }
 
@@ -34,15 +37,13 @@ export async function applyOperation(board, op, userId) {
     }
 
     case 'stroke.clear': {
-        // Clear all committed strokes for this board in a single operation.
-        // Using `deleted = true` instead of removing preserves the op-log
-        // replay semantics and lets late-joining clients reconcile quickly.
-        for (const s of board.strokes) {
-            s.deleted = true;
-        }
-        break;
+      // Single atomic op: records the moment the board was cleared.
+      // Existing strokes are flagged here too so a full reload sees an
+      // empty board without requiring a separate delete per stroke.
+      board.clearedAt = Date.now();
+      for (const s of board.strokes) s.deleted = true;
+      break;
     }
-
     case 'stroke.clear': {
         board.clearedAt = new Date();
         break;
